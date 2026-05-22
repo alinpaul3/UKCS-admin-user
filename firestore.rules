@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. GLOBAL SAFETY NET: Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- SHARED HELPERS ---
+    function isSignedIn() { return request.auth != null; }
+    
+    // Admin check: robust role lookup or bootstrap email
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'alinaa20@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Role check helper
+    function hasRole(role) {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- USER PROFILE RULES ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isAdmin() || isOwner(userId) || (resource != null && resource.data.email == request.auth.token.email));
+      allow list: if isAdmin() || (isSignedIn() && resource != null && resource.data.email == request.auth.token.email);
+      
+      // Allow initial creation by the user themselves or by an admin
+      allow create: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming(), userId);
+      allow update: if isSignedIn() && isValidId(userId) && (isAdmin() || (isOwner(userId) && incoming().role == existing().role)) && isValidUser(incoming(), userId);
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    function isValidUser(data, userId) {
+      return data.email is string && data.email.size() <= 200 &&
+             data.role in ['admin', 'user'] &&
+             (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (data.enrollmentId == null || (data.enrollmentId is string && data.enrollmentId.size() <= 60)) &&
+             (data.uid == null || (data.uid is string && data.uid == userId));
+    }
+
+    // --- CERTIFICATE RULES ---
+    match /certificates/{certId} {
+      allow get: if isSignedIn() && isValidId(certId) && (isAdmin() || isOwner(existing().userId) || (existing().userEmail == request.auth.token.email));
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid || resource.data.userEmail == request.auth.token.email);
+
+      allow create: if isAdmin() && isValidId(certId) && isValidCertificate(incoming());
+      
+      allow update: if (isAdmin() && isValidId(certId) && isValidCertificate(incoming()) && incoming().userId == existing().userId) ||
+                    (isSignedIn() && 
+                     isValidId(certId) &&
+                     incoming().diff(existing()).affectedKeys().hasOnly(['userId']) &&
+                     incoming().userId == request.auth.uid &&
+                     existing().userEmail == request.auth.token.email);
+                    
+      allow delete: if isAdmin() && isValidId(certId);
+    }
+
+    function isValidCertificate(data) {
+      return data.title is string && data.title.size() <= 250 &&
+             data.userId is string && isValidId(data.userId) &&
+             data.fileUrl is string && data.fileUrl.size() <= 2048 &&
+             data.uploadedBy is string && isValidId(data.uploadedBy) &&
+             (data.userName == null || data.userName is string) &&
+             (data.userEnrollmentId == null || data.userEnrollmentId is string) &&
+             (data.userEmail == null || (data.userEmail is string && data.userEmail.size() <= 200)) &&
+             (data.fileName == null || data.fileName is string) &&
+             (data.fileType == null || data.fileType is string) &&
+             (data.startDate == null || data.startDate is string) &&
+             (data.endDate == null || data.endDate is string) &&
+             (data.certificateName == null || (data.certificateName is string && data.certificateName.size() <= 200));
+    }
+  }
+}
