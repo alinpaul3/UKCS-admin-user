@@ -12,7 +12,7 @@ export interface Certificate {
   id: string;
   title: string;
   startDate: string;
-  endDate: string;
+  endDate?: string;
   certificateName?: string;
   fileUrl: string;
   fileName: string;

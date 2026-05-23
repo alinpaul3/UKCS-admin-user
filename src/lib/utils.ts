@@ -23,7 +23,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-export function formatDate(date: string | number | Date) {
+export function formatDate(date?: string | number | Date | null) {
+  if (!date) return 'No expiry';
+
   return new Date(date).toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',

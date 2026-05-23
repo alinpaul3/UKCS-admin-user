@@ -209,11 +209,10 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
                       required 
                     />
                     <Input 
-                      label="End Date (Expiry)" 
+                      label="End Date (Expiry Optional)" 
                       type="date" 
                       value={formData.endDate}
                       onChange={(e) => setFormData({...formData, endDate: e.target.value})}
-                      required 
                     />
                   </div>
                 </div>
