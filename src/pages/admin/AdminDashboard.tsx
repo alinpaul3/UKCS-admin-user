@@ -29,7 +29,8 @@ import {
   Clock, 
   Search,
   Eye,
-  Copy
+  Copy,
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import UploadCertificateModal from './UploadCertificateModal';
@@ -40,6 +41,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [certToEdit, setCertToEdit] = useState<Certificate | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [certToDelete, setCertToDelete] = useState<Certificate | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -143,7 +145,10 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-black text-brand-blue tracking-tight">Admin Portal Control</h1>
           <p className="text-sm text-slate-500 font-medium italic">User & Certificate Lifecycle Management</p>
         </div>
-        <Button onClick={() => setIsUploadModalOpen(true)} className="gap-2 bg-action-blue">
+        <Button onClick={() => {
+          setCertToEdit(null);
+          setIsUploadModalOpen(true);
+        }} className="gap-2 bg-action-blue">
           <Plus size={20} />
           <span>Issue New Certificate</span>
         </Button>
@@ -253,6 +258,16 @@ export default function AdminDashboard() {
                              <a href={cert.fileUrl} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View Document">
                                <Eye size={18} />
                              </a>
+                             <button
+                               onClick={() => {
+                                 setCertToEdit(cert);
+                                 setIsUploadModalOpen(true);
+                               }}
+                               className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                               title="Edit Certificate"
+                             >
+                               <Pencil size={18} />
+                             </button>
                              <button 
                                onClick={() => handleDeleteClick(cert)} 
                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -280,8 +295,12 @@ export default function AdminDashboard() {
 
       <UploadCertificateModal 
         isOpen={isUploadModalOpen} 
-        onClose={() => setIsUploadModalOpen(false)} 
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setCertToEdit(null);
+        }} 
         onSuccess={fetchDashboardData}
+        certificate={certToEdit}
       />
 
       {/* Delete Confirmation Modal */}

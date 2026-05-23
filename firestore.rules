@@ -63,7 +63,7 @@ service cloud.firestore {
 
       allow create: if isAdmin() && isValidId(certId) && isValidCertificate(incoming());
       
-      allow update: if (isAdmin() && isValidId(certId) && isValidCertificate(incoming()) && incoming().userId == existing().userId) ||
+      allow update: if (isAdmin() && isValidId(certId) && isValidCertificate(incoming())) ||
                     (isSignedIn() && 
                      isValidId(certId) &&
                      incoming().diff(existing()).affectedKeys().hasOnly(['userId']) &&

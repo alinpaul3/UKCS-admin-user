@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../../lib/firebase';
-import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
-import { User, OperationType } from '../../types';
-import { handleFirestoreError } from '../../lib/utils';
-import { X, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Certificate, User } from '../../types';
+import { Upload, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 
@@ -13,9 +12,10 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  certificate?: Certificate | null;
 }
 
-export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: Props) {
+export default function UploadCertificateModal({ isOpen, onClose, onSuccess, certificate }: Props) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -26,12 +26,25 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
     endDate: '',
     certificateName: ''
   });
+  const isEditMode = Boolean(certificate);
 
   useEffect(() => {
     if (isOpen) {
       fetchUsers();
+      setFile(null);
+      if (certificate) {
+        setFormData({
+          userId: certificate.userId || '',
+          title: certificate.title || '',
+          startDate: certificate.startDate || '',
+          endDate: certificate.endDate || '',
+          certificateName: certificate.certificateName || ''
+        });
+      } else {
+        resetForm();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, certificate]);
 
   const fetchUsers = async () => {
     try {
@@ -60,41 +73,55 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !formData.userId) return;
+    if ((!file && !isEditMode) || !formData.userId) return;
 
     setLoading(true);
     try {
-      // 1. Upload file to Cloudinary via Server API
-      const formDataUpload = new FormData();
-      formDataUpload.append('file', file);
+      let uploadRes: { secure_url?: string; public_id?: string } = {};
+      let fileUrl = certificate?.fileUrl || '';
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formDataUpload,
-      });
+      if (file) {
+        const formDataUpload = new FormData();
+        formDataUpload.append('file', file);
 
-      if (!response.ok) {
-        throw new Error('Server upload failed');
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formDataUpload,
+        });
+
+        if (!response.ok) {
+          throw new Error('Server upload failed');
+        }
+
+        uploadRes = await response.json();
+        fileUrl = uploadRes.secure_url || fileUrl;
       }
 
-      const uploadRes = await response.json();
-      const fileUrl = uploadRes.secure_url;
-
-      // 2. Create metadata in Firestore
       const selectedUser = users.find(u => u.uid === formData.userId);
-      
-      await addDoc(collection(db, 'certificates'), {
+      const certificateData = {
         ...formData,
         userName: selectedUser?.displayName || 'Unknown User',
         userEnrollmentId: selectedUser?.enrollmentId || 'N/A',
         userEmail: selectedUser?.email || '',
         fileUrl,
-        publicId: uploadRes.public_id,
-        fileName: file.name,
-        fileType: file.type,
-        uploadedBy: auth.currentUser?.uid,
-        createdAt: Date.now() 
-      });
+        publicId: uploadRes.public_id || certificate?.publicId || '',
+        fileName: file?.name || certificate?.fileName || '',
+        fileType: file?.type || certificate?.fileType || '',
+      };
+
+      if (isEditMode && certificate) {
+        await updateDoc(doc(db, 'certificates', certificate.id), {
+          ...certificateData,
+          updatedAt: Date.now(),
+          updatedBy: auth.currentUser?.uid,
+        });
+      } else {
+        await addDoc(collection(db, 'certificates'), {
+          ...certificateData,
+          uploadedBy: auth.currentUser?.uid,
+          createdAt: Date.now()
+        });
+      }
 
       onSuccess();
       onClose();
@@ -130,8 +157,8 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
              {/* Left side: Upload area */}
              <div className="md:w-5/12 bg-slate-50 p-6 border-r border-slate-100 flex flex-col">
                 <div className="mb-6">
-                   <h3 className="text-xl font-black text-[#003366] tracking-tight">Upload Document</h3>
-                   <p className="text-sm text-slate-500 font-medium italic">PDF or images only</p>
+                   <h3 className="text-xl font-black text-[#003366] tracking-tight">{isEditMode ? 'Edit Document' : 'Upload Document'}</h3>
+                   <p className="text-sm text-slate-500 font-medium italic">{isEditMode ? 'Replace file if needed' : 'PDF or images only'}</p>
                 </div>
 
                 <div 
@@ -154,6 +181,15 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
                         >
                           Change File
                         </button>
+                     </div>
+                   ) : isEditMode && certificate?.fileName ? (
+                     <div className="text-center">
+                        <div className="bg-blue-100 text-blue-700 p-4 rounded-full inline-block mb-3">
+                           <CheckCircle2 size={40} />
+                        </div>
+                        <p className="font-bold text-slate-900 truncate max-w-[200px]">{certificate.fileName}</p>
+                        <p className="text-sm text-slate-500">Current file</p>
+                        <p className="text-xs text-slate-400 mt-4">Click to upload a replacement</p>
                      </div>
                    ) : (
                      <div className="text-center">
@@ -219,8 +255,8 @@ export default function UploadCertificateModal({ isOpen, onClose, onSuccess }: P
 
                 <div className="flex gap-4 pt-6">
                    <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-                   <Button type="submit" className="flex-1" isLoading={loading} disabled={!file || !formData.userId}>
-                      Issue Certificate
+                   <Button type="submit" className="flex-1" isLoading={loading} disabled={(!file && !isEditMode) || !formData.userId}>
+                      {isEditMode ? 'Save Changes' : 'Issue Certificate'}
                    </Button>
                 </div>
              </form>
